@@ -8,6 +8,8 @@ import time
 from tabulate import tabulate
 import configparser
 import asyncio
+import math
+from PIL import Image, ImageDraw, ImageFont
 
 client = discord.Client()
 
@@ -157,6 +159,20 @@ def is_user_timed_out(user_name):
     remaining_cooldown = timeout_interval_seconds - int(time.time() - user_timeout[user_name])
     return True, remaining_cooldown
 
+def save_text_to_picture(text_to_print, text_width, text_height):
+
+    # name of the file to save
+    filename = "img01.png"
+    font_size = 30
+    fnt = ImageFont.truetype('consola.ttf', font_size)
+    # create new image
+    image = Image.new(mode="RGB", size=(math.floor(text_width * font_size*0.588), math.floor(text_height * font_size *0.93)), color=(54,57,63))
+    draw = ImageDraw.Draw(image)
+
+    draw.text((10, 10), text_to_print, font=fnt, fill=(185, 187, 190))
+    image.save(filename)
+    return filename
+
 @client.event
 async def on_message(message):
     # we do not want the bot to reply to itself
@@ -294,7 +310,6 @@ async def on_message(message):
 
             processing_list.remove(real_team_name)
 
-        await message.channel.send("Hier sind die Spielergebnisse:")
 
         # message_post_split = tabulate(data).split("\n")
 
@@ -309,12 +324,8 @@ async def on_message(message):
 
         tabulated_message_split = tabulated_message.split("\n")
 
-        chunk_size = 40
-        chunks = [tabulated_message_split[x:x + chunk_size] for x in range(0, len(tabulated_message_split), chunk_size)]
-
-        for chunk in chunks:
-            out_message = "\n".join(chunk)
-            await message.channel.send("```" + out_message + "```")
+        file = save_text_to_picture(tabulated_message, len(tabulated_message_split[0]), len(tabulated_message_split))
+        await message.channel.send("Hier sind die Spielergebnisse:",file=discord.File(file))
 
 
 @client.event
