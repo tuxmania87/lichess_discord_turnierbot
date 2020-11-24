@@ -9,6 +9,7 @@ from tabulate import tabulate
 import configparser
 import asyncio
 import math
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 client = discord.Client()
@@ -166,7 +167,7 @@ def save_text_to_picture(text_to_print, text_width, text_height):
     font_size = 30
     fnt = ImageFont.truetype('consola.ttf', font_size)
     # create new image
-    image = Image.new(mode="RGB", size=(math.floor(text_width * font_size*0.588), math.floor(text_height * font_size *0.93)), color=(54,57,63))
+    image = Image.new(mode="RGB", size=(math.floor(text_width * font_size*0.588), math.floor(text_height * font_size *0.93)), color=(47,49,54)) #54,57,63
     draw = ImageDraw.Draw(image)
 
     draw.text((10, 10), text_to_print, font=fnt, fill=(185, 187, 190))
@@ -316,15 +317,22 @@ async def on_message(message):
         # for m in message_post_split:
         # await message.channel.send(m)
 
+        # Schlag uns biiitte nicht tot für diesen code KEKW
+        # hier mussten wir DEINE fehler ausmerzen xD
         display_data = data.sort_values(["Punkte"], ascending=[False]).head(top_count)
+        display_data['Pos'] = np.arange(len(display_data)) + 1
+        display_data['Name'] = display_data.index
+        display_data = display_data.set_index('Pos')
+        display_data = display_data[["Name","Win", "Draw", "Loss", "Punkte"]]
 
-        tabulated_message = tabulate(display_data, headers=["Win", "Draw", "Loss", "Punkte"])
+        tabulated_message = tabulate(display_data, headers=["Name","Win", "Draw", "Loss", "Pts"])
 
         # only do 10 rows at a time
 
         tabulated_message_split = tabulated_message.split("\n")
 
         file = save_text_to_picture(tabulated_message, len(tabulated_message_split[0]), len(tabulated_message_split))
+
         await message.channel.send("Hier sind die Spielergebnisse:",file=discord.File(file))
 
 
