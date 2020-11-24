@@ -21,13 +21,6 @@ class GameStats:
         self.white = game.headers["White"].lower()
         self.result = game.headers["Result"]
 
-    def get_black_stats(self):
-        pass
-
-    def get_white_stats(self):
-        pass
-
-
 class LichessUtils:
 
     def __init__(self, print_callback):
@@ -49,23 +42,18 @@ class LichessUtils:
 
         return jj["currentPageResults"][0]["name"]
 
-    def get_swiss_tournaments_from_team(self, team_name):
+    async def get_swiss_tournaments_from_team(self, team_name):
 
         team_id = self.get_team_id_from_team_name(team_name)
 
         url = "https://lichess.org/api/team/{}/swiss"
 
         json_response = requests.get(url.format(team_id))
-
         json_response_string = json_response.content.decode("utf-8")
-
         json_array = json_response_string.split("\n")
-
         id_array = list()
 
-        # loop = asyncio.new_event_loop()
-        # asyncio.set_event_loop(loop)
-        # message_object = loop.run_until_complete(self.print(progress_message))
+        await self.print("Prüfe auf neue Turniere für Team {}".format(team_name))
 
         for tournament in json_array:
 
@@ -124,27 +112,47 @@ class LichessUtils:
 
         return player
 
-    def get_statistics(self, team_name):
+    async def get_statistics(self, team_name):
+        global tournament_list
+        global team_points
 
         df = None
 
         counter = 0
-        progress_message = "Progress: {}/{}"
+        progress_message = "Fortschritt: {}/{}"
 
-        tournaments = self.get_swiss_tournaments_from_team(team_name)
-        for t in tournaments:
+        tournaments = await self.get_swiss_tournaments_from_team(team_name)
+
+        # check for new tournaments that are not yet in tournament_list
+        new_tournaments = list(set(tournaments)-set(tournament_list))
+
+        if len(new_tournaments) == 0:
+            await self.print("Keine neuen Turniere gefunden, Liste ist auf neustem Stand.")
+
+        # load all data frame if exists
+        if team_name not in team_points:
+            team_points[team_name] = pd.DataFrame()
+
+        df = team_points[team_name]
+
+        if len(new_tournaments) > 0:
+            sent_message = await self.print(progress_message.format(counter, len(tournaments)))
+
+        for t in new_tournaments:
 
             df_t = self.build_pandas_stats(self.get_all_games_from_swiss_tournament(t))
-
-            if df is None:
-                df = df_t
-            else:
-                df = pd.concat([df, df_t]).reset_index().groupby("index").sum()
+            df = pd.concat([df, df_t]).reset_index().groupby("index").sum()
 
             counter += 1
             print(progress_message.format(counter, len(tournaments)))
+            await sent_message.edit(content=progress_message.format(counter, len(tournaments)))
+
+        # add new tournaments to list
+        tournament_list = tournament_list + new_tournaments
 
         df["Punkte"] = df.Win+df.Draw/2
+
+        team_points[team_name] = df
 
         return df
 
@@ -164,16 +172,11 @@ async def on_message(message):
     if message.author == client.user:
         return
 
-    if message.content.startswith('!hello'):
-        msg = 'Hello {0.author.mention}'.format(message)
-        await message.channel.send(msg)
-
     if message.content.startswith("!commands"):
 
         msg = "```\n" +\
             "!tabelle <team_name> <top output>  -  Gibt die top <top output> Tabelle für Team <team_name> aus\n" + \
-            "!punkte <spieler_name> <team_name> -  Gibt den Score und die Position für Spieler <spieler_name> im Team <team_name> aus\n" + \
-            "!refresh <team_name>               -  Aktualisiert Daten für Team <team_name> aus. Daten sind gecached für 24h" + \
+            "!punkte <spieler_name> <team_name> -  Gibt den Score und die Position für Spieler <spieler_name> im Team <team_name> aus" + \
             "```"
 
         await message.channel.send(msg)
@@ -196,58 +199,15 @@ async def on_message(message):
             await message.channel.send("Daten für Team {} werden bereits abgefragt. Bitte warten...".format(real_team_name))
             return
 
-        team_id = stats_object.get_team_id_from_team_name(team_name)
-
-
-        if real_team_name not in team_points:
-            team_points[real_team_name] = (None, 0)
-
-        data, last_fetched_time = team_points[real_team_name]
-
-        if time.time() - last_fetched_time > 24 * 60 * 60:
-            await message.channel.send(
-                "Hole Daten für Team {} live von Lichess. Das kann etwas dauern.".format(real_team_name))
-
-            processing_list.append(real_team_name)
-
-            new_data = stats_object.get_statistics(real_team_name)
-            team_points[real_team_name] = (new_data, time.time())
-
-            data = new_data
-
-            processing_list.remove(real_team_name)
+        processing_list.append(real_team_name)
+        data = await stats_object.get_statistics(real_team_name)
+        processing_list.remove(real_team_name)
 
         if player_name in data.index:
             entry = data.loc[player_name]
             await message.channel.send("Statistiken für {}. Win: {}  Draw: {}  Loss: {}".format(player_name, entry["Win"], entry["Draw"], entry["Loss"]))
         else:
             await message.channel.send("Spieler {} hat noch nicht in einem Turnier von Team {} teilgenommen.".format(player_name, real_team_name))
-
-    if message.content.startswith("!refresh"):
-
-        timeouted, cooldown = is_user_timed_out(message.author.mention)
-        if timeouted:
-            await message.channel.send("@{}: {} Sekunden Timeout verbleibend".format(message.author.mention, cooldown))
-            return
-
-
-
-        stats_object = LichessUtils(None)
-        _, team_name = message.content.split(" ")
-        real_team_name = stats_object.get_team_name_from_team_name(team_name)
-
-        if real_team_name in processing_list:
-            await message.channel.send("Daten für Team {} werden bereits abgefragt. Bitte warten...".format(real_team_name))
-            return
-
-        processing_list.append(real_team_name)
-
-        new_data = stats_object.get_statistics(real_team_name)
-        team_points[real_team_name] = (new_data, time.time())
-
-        processing_list.remove(real_team_name)
-
-        await message.channel.send("Daten für Team {} wurden aktualisiert.".format(real_team_name))
 
 
     if message.content.startswith("!tabelle"):
@@ -276,23 +236,9 @@ async def on_message(message):
         if len(message_split) > 2:
             top_count = int(message_split[2])
 
-        if real_team_name not in team_points:
-            team_points[real_team_name] = (None, 0)
-
-        data, last_fetched_time = team_points[real_team_name]
-
-        if time.time() - last_fetched_time > 24 * 60 * 60:
-            await message.channel.send(
-                "Hole Daten für Team {} live von Lichess. Das kann etwas dauern.".format(real_team_name))
-
-            processing_list.append(real_team_name)
-
-            new_data = stats_object.get_statistics(real_team_name)
-            team_points[real_team_name] = (new_data, time.time())
-
-            data = new_data
-
-            processing_list.remove(real_team_name)
+        processing_list.append(real_team_name)
+        data = await stats_object.get_statistics(real_team_name)
+        processing_list.remove(real_team_name)
 
         await message.channel.send("Hier sind die Spielergebnisse:")
 
@@ -335,5 +281,6 @@ timeout_interval_seconds = int(config["DEFAULT"]["Timeout"])
 team_points = {}
 user_timeout = {}
 processing_list = list()
+tournament_list = list()
 
 client.run(TOKEN)
