@@ -83,6 +83,10 @@ class LichessUtils:
         return all_parsed_games
 
     def build_pandas_stats(self, games):
+
+        if len(games) == 0:
+            return None
+
         df = pd.DataFrame(self.build_stats(games)).T
         df.columns = ["Win", "Draw", "Loss"]
         return df
@@ -142,11 +146,15 @@ class LichessUtils:
             sent_message = await self.print(progress_message.format(counter, len(tournaments)))
 
         for t in new_tournaments:
-
+            print("Torunament", t)
             df_t = self.build_pandas_stats(self.get_all_games_from_swiss_tournament(t))
-            df = pd.concat([df, df_t]).reset_index().groupby("index").sum()
 
             counter += 1
+
+            if df_t is None:
+                continue
+            df = pd.concat([df, df_t]).reset_index().groupby("index").sum()
+
             print(progress_message.format(counter, len(tournaments)))
             await sent_message.edit(content=progress_message.format(counter, len(tournaments)))
 
